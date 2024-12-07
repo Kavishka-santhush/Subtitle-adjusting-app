@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subtitle Time Shifter</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .input-section {
+            margin: 20px 0;
+            text-align: center;
+        }
+        .output-section {
+            margin-top: 20px;
+        }
+        #output {
+            width: 100%;
+            height: 300px;
+            margin-top: 10px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            resize: vertical;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .file-input {
+            margin: 20px 0;
+        }
+        .instructions {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            border-left: 4px solid #4CAF50;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Subtitle Time Shifter</h1>
+        
+        <div class="instructions">
+            <p>This tool adds or subtracts time from all timestamps in your subtitle file.</p>
+            <p>1. Select your subtitle file (.srt format)</p>
+            <p>2. Enter the time in minutes from which to apply the delay</p>
+            <p>3. Enter the delay time in seconds (use negative values to subtract time)</p>
+            <p>4. Click "Process File" to modify timestamps</p>
+            <p>5. Use "Download" to save the modified subtitle file</p>
+        </div>
+
+        <div class="input-section">
+            <input type="file" id="fileInput" accept=".srt" class="file-input">
+            <br>
+            <div class="delay-input" style="margin: 10px 0;">
+                <label for="startTime">Apply delay from (minutes):</label>
+                <input type="number" id="startTime" step="0.001" value="0" style="padding: 5px; margin: 0 10px;">
+                <br><br>
+                <label for="delayTime">Delay amount (seconds):</label>
+                <input type="number" id="delayTime" step="0.001" value="2.020" style="padding: 5px; margin: 0 10px;">
+            </div>
+            <button onclick="processFile()">Process File</button>
+            <button onclick="downloadFile()" id="downloadBtn" disabled>Download</button>
+        </div>
+
+        <div class="output-section">
+            <textarea id="output" readonly placeholder="Processed subtitle will appear here..."></textarea>
+        </div>
+    </div>
+
+    <script>
+        let processedContent = '';
+
+        function timeToSeconds(timeStr) {
+            const [hours, minutes, seconds] = timeStr.split(':');
+            const [secs, ms] = seconds.split(',');
+            return parseInt(hours) * 3600 + parseInt(minutes) * 60 + parseInt(secs) + parseInt(ms) / 1000;
+        }
+
+        function secondsToTime(totalSeconds) {
+            const hours = Math.floor(totalSeconds / 3600);
+            totalSeconds %= 3600;
+            const minutes = Math.floor(totalSeconds / 60);
+            totalSeconds %= 60;
+            const seconds = Math.floor(totalSeconds);
+            const ms = Math.round((totalSeconds - seconds) * 1000);
+
+            return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')},${String(ms).padStart(3, '0')}`;
+        }
+
+        function processFile() {
+            const fileInput = document.getElementById('fileInput');
+            const delayInput = document.getElementById('delayTime');
+            const startTimeInput = document.getElementById('startTime');
+            const outputArea = document.getElementById('output');
+            const downloadBtn = document.getElementById('downloadBtn');
+            
+            if (!fileInput.files.length) {
+                alert('Please select a file first!');
+                return;
+            }
+
+            const file = fileInput.files[0];
+            if (!file.name.toLowerCase().endsWith('.srt')) {
+                alert('Please select a .srt file!');
+                return;
+            }
+
+            const delay = parseFloat(delayInput.value) || 0;
+            const startTimeInSeconds = (parseFloat(startTimeInput.value) || 0) * 60;
+            const reader = new FileReader();
+
+            reader.onload = function(e) {
+                try {
+                    const content = e.target.result;
+                    // Split content into subtitle blocks
+                    const blocks = content.trim().split(/\r?\n\r?\n/);
+                    
+                    const processedBlocks = blocks.map(block => {
+                        const lines = block.split(/\r?\n/);
+                        if (lines.length < 3) return block; // Skip invalid blocks
+
+                        // First line is the subtitle number
+                        const subtitleNumber = lines[0];
+                        
+                        // Second line contains the timestamps
+                        const timestampLine = lines[1];
+                        const timestampRegex = /(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})/;
+                        const match = timestampLine.match(timestampRegex);
+                        
+                        if (match) {
+                            const startTimeStamp = timeToSeconds(match[1]);
+                            const endTimeStamp = timeToSeconds(match[2]);
+                            
+                            // Only apply delay if the timestamp is after the start time
+                            if (startTimeStamp >= startTimeInSeconds) {
+                                const newStartTime = Math.max(0, startTimeStamp + delay);
+                                const newEndTime = Math.max(0, endTimeStamp + delay);
+                                lines[1] = `${secondsToTime(newStartTime)} --> ${secondsToTime(newEndTime)}`;
+                            }
+                        }
+
+                        // Return the processed block
+                        return lines.join('\n');
+                    });
+
+                    // Join blocks with double newlines as per SRT format
+                    processedContent = processedBlocks.join('\n\n') + '\n';
+                    outputArea.value = processedContent;
+                    downloadBtn.disabled = false;
+                } catch (error) {
+                    console.error('Error processing file:', error);
+                    alert('Error processing the subtitle file. Please make sure it\'s a valid SRT file.');
+                    outputArea.value = '';
+                    downloadBtn.disabled = true;
+                }
+            };
+
+            reader.onerror = function() {
+                alert('Error reading the file. Please try again.');
+                outputArea.value = '';
+                downloadBtn.disabled = true;
+            };
+
+            reader.readAsText(file);
+        }
+
+        function downloadFile() {
+            if (!processedContent) {
+                alert('Please process a file first!');
+                return;
+            }
+
+            try {
+                const blob = new Blob([processedContent], { type: 'text/plain;charset=utf-8' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                
+                // Get the original filename and replace .srt extension
+                const originalFile = document.getElementById('fileInput').files[0];
+                const newFilename = originalFile.name.replace('.srt', '_modified.srt');
+                a.download = newFilename;
+                
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            } catch (error) {
+                console.error('Error downloading file:', error);
+                alert('Error downloading the file. Please try again.');
+            }
+        }
+    </script>
+</body>
+</html>
